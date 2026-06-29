@@ -28,6 +28,14 @@ Each match is priced on a 12-month lease when the leasing endpoint publishes one
 When it does not, the quoted term's price (13-mo, 14-mo, ...) is used as the
 assumed 12-month figure and shown with a leading `~`.
 
+## Recommendation (optional)
+
+If an `ANTHROPIC_API_KEY` is available to the worker (a GitHub Actions secret),
+each alert is prefixed with a one-line "top pick" written by Claude
+(`claude-haiku-4-5` by default; override with `REC_MODEL`), weighing One Lakefront
+preference first, then lowest effective rent per sqft, then size. Without the key
+the alert still sends, just without the pick.
+
 ## Alerts
 
 Pushes to ntfy topic `onelakefront-hunt-7tq39fkd2p`. Subscribe to that topic in
