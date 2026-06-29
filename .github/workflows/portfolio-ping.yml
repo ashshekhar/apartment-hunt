@@ -1,0 +1,15 @@
+name: portfolio-brief-ping
+
+on:
+  schedule:
+    # 8:30 AM PT weekdays = 15:30 UTC (computed for PDT; shifts 1h in winter).
+    - cron: "30 15 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Push ntfy reminder
+        run: |
+          curl -fsS -H "Content-Type: application/json" -d '{"topic":"portfolio-brief-9f3k2xqd7m","title":"📊 Daily portfolio brief ready","message":"Your morning brief is waiting in your Gmail Drafts — open Gmail and tap Drafts to read it.","priority":4,"tags":["chart_with_upwards_trend"]}' https://ntfy.sh/
