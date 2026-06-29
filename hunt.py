@@ -189,10 +189,21 @@ def notify(title, body):
     if DRY_RUN:
         print(f"[DRY_RUN] would push:\nTITLE: {title}\n{body}")
         return
+    # Publish via JSON so unicode/emoji in the title survive: HTTP headers are
+    # latin-1 only, so an emoji in a Title header raises UnicodeEncodeError.
+    payload = json.dumps(
+        {
+            "topic": NTFY_TOPIC,
+            "title": title,
+            "message": body,
+            "priority": 4,
+            "tags": ["house"],
+        }
+    ).encode("utf-8")
     req = urllib.request.Request(
-        f"https://ntfy.sh/{NTFY_TOPIC}",
-        data=body.encode("utf-8"),
-        headers={"Title": title, "Priority": "high", "Tags": "house"},
+        "https://ntfy.sh/",
+        data=payload,
+        headers={"Content-Type": "application/json"},
         method="POST",
     )
     urllib.request.urlopen(req, timeout=30).read()
