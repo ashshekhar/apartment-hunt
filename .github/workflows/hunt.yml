@@ -1,11 +1,13 @@
 name: one-lakefront-1br-hunt
 
 on:
-  schedule:
-    # Pacific times, computed for PDT (UTC-7); shift 1h in winter (PST).
-    # UTC 16,18,20,22,0,2,4 = 9,11AM,1,3,5,7,9PM PT (every 2h, daytime);
-    # UTC 10 = ~3AM PT (one overnight run).
-    - cron: "0 0,2,4,10,16,18,20,22 * * *"
+schedule:
+  # Pacific times, computed for PDT (UTC-7); shift 1h in winter (PST).
+  # Daytime hourly: 9AM–9PM PT
+  # UTC 16-23,0-4 = 9AM,10AM,11AM,12PM,1PM,2PM,3PM,4PM,
+  #                 5PM,6PM,7PM,8PM,9PM PT
+  # Overnight runs: 1AM,3AM,5AM PT (UTC 08,10,12)
+  - cron: "0 0-4,8,10,12,16-23 * * *"
   workflow_dispatch: {}         # manual "Run workflow" button
 
 permissions:
