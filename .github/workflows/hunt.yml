@@ -2,38 +2,54 @@ name: one-lakefront-1br-hunt
 
 on:
 schedule:
-  # Pacific times, computed for PDT (UTC-7); shift 1h in winter (PST).
-  # Daytime hourly: 9AM–9PM PT
-  # UTC 16-23,0-4 = 9AM,10AM,11AM,12PM,1PM,2PM,3PM,4PM,
-  #                 5PM,6PM,7PM,8PM,9PM PT
-  # Overnight runs: 1AM,3AM,5AM PT (UTC 08,10,12)
-  - cron: "0 0-4,8,10,12,16-23 * * *"
-  workflow_dispatch: {}         # manual "Run workflow" button
+# Pacific times, computed for PDT (UTC-7); shift 1h in winter (PST).
+# Daytime hourly: 9AM–9PM PT
+# UTC 16-23,0-4 = 9AM,10AM,11AM,12PM,1PM,2PM,3PM,4PM,
+#                 5PM,6PM,7PM,8PM,9PM PT
+# Overnight runs: 1AM,3AM,5AM PT
+# UTC 08,10,12
+- cron: "0 0-4,8,10,12,16-23 * * *"
+
+workflow_dispatch:
 
 permissions:
-  contents: write               # allow committing updated state.json
+contents: write
 
 concurrency:
-  group: apartment-hunt
-  cancel-in-progress: false
+group: apartment-hunt
+cancel-in-progress: false
 
 jobs:
-  hunt:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+hunt:
+runs-on: ubuntu-latest
 
-      - name: Run hunt
-        run: python3 hunt.py
+```
+steps:
+  - name: Checkout repository
+    uses: actions/checkout@v4
 
-      - name: Persist state
-        run: |
-          if ! git diff --quiet -- state.json; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add state.json
-            git commit -m "chore: update hunt state"
-            git push
-          else
-            echo "state unchanged"
-          fi
+  - name: Setup Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: "3.12"
+
+  - name: Install dependencies
+    run: |
+      if [ -f requirements.txt ]; then
+        pip install -r requirements.txt
+      fi
+
+  - name: Run hunt
+    run: python3 hunt.py
+
+  - name: Persist state
+    run: |
+      if [ -f state.json ] && ! git diff --quiet -- state.json; then
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add state.json
+        git commit -m "chore: update hunt state"
+        git push
+      else
+        echo "state unchanged"
+      fi
