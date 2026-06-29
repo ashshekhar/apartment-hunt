@@ -1,7 +1,21 @@
 {
-  "seen": [],
-  "disliked": [
-    "W218",
-    "W327"
-  ]
+  "properties": {
+    "one-lakefront": {
+      "seen": []
+    },
+    "juxt": {
+      "seen": []
+    },
+    "true-north": {
+      "seen": []
+    }
+  },
+  "disliked": {
+    "one-lakefront": [
+      "W218",
+      "W327"
+    ],
+    "juxt": [],
+    "true-north": []
+  }
 }
