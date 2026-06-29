@@ -23,11 +23,6 @@ NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "onelakefront-hunt-7tq39fkd2p")
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
 
-# Optional Claude-written "top pick" line, prepended to the alert. Best-effort:
-# if the key is absent or the call fails, the alert still sends without it.
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-REC_MODEL = os.environ.get("REC_MODEL", "claude-haiku-4-5")
-
 # Properties in priority order (One Lakefront first). Each SightMap feed shares
 # the same shape: .data.units[] and .data.floor_plans[].
 PROPERTIES = [
@@ -190,59 +185,26 @@ def unit_block(r):
     )
 
 
-def recommendation(sections):
-    """Ask Claude for a 1-2 line top pick across the new matches.
+def top_pick(sections):
+    """Deterministic 'top pick' across the new matches. No API, no cost.
 
-    sections is a list of (label, rows). Returns the recommendation text, or
-    None if no API key is set or the call fails (the alert still sends).
+    Priority order matches the stated preference: One Lakefront first, then
+    lowest effective rent per sqft, then largest size. sections is a list of
+    (label, rows). Returns a 1-2 line string, or None if there are no matches.
     """
-    if not ANTHROPIC_API_KEY:
+    cands = [(label, r) for label, rows in sections for r in rows]
+    if not cands:
         return None
-    lines = []
-    for label, rows in sections:
-        for r in rows:
-            term = "12-mo" if r["true12"] else f"~{r['term']}-mo"
-            lines.append(
-                f"{label} {r['unit']}: {r['plan']}, floor {r['floor']}, {r['sqft']} sqft, "
-                f"available {r['avail']}, ${r['base']}/mo ({term}), "
-                f"8-weeks-free effective ${r['eff8']}/mo, ${r['ppsf']:.2f}/sqft"
-            )
-    prompt = (
-        "I'm picking a Seattle 1-bedroom apartment. My current unit is One Lakefront "
-        "W119 at $2,043/mo effective rent; I want bigger and ideally cheaper, and I "
-        "prefer staying at One Lakefront. From the newly available units below, choose "
-        "the single best option weighing, in order: my One Lakefront preference, lowest "
-        "effective rent per square foot, then largest size. Reply in at most two short "
-        "lines, no preamble. Line 1: 'Top pick: <building> <unit> - <one-clause reason>'. "
-        "Line 2 (optional): a runner-up.\n\nUnits:\n" + "\n".join(lines)
-    )
-    payload = json.dumps(
-        {
-            "model": REC_MODEL,
-            "max_tokens": 300,
-            "messages": [{"role": "user", "content": prompt}],
-        }
-    ).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=payload,
-        headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            data = json.loads(r.read())
-        text = "".join(
-            b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"
-        ).strip()
-        return text or None
-    except Exception as e:
-        print(f"WARN: recommendation call failed: {e}")
-        return None
+    cands.sort(key=lambda lr: (lr[0] != "One Lakefront", lr[1]["ppsf"], -lr[1]["sqft"]))
+
+    def line(lead, label, r):
+        beats = " · beats your $2,043" if r["eff6"] < BENCH else ""
+        return f"{lead}: {label} {r['unit']} — {r['sqft']} sqft at ${r['ppsf']:.2f}/sqft{beats}"
+
+    out = [line("Top pick", *cands[0])]
+    if len(cands) > 1:
+        out.append(line("Runner-up", *cands[1]))
+    return "\n".join(out)
 
 
 def notify(title, body):
@@ -308,9 +270,9 @@ def main():
             header = f"{emoji} {label.upper()} · {len(rows)} new\n──────────"
             blocks.append(header + "\n" + "\n\n".join(unit_block(r) for r in rows))
         body = "\n\n".join(blocks)
-        rec = recommendation([(label, rows) for label, _emoji, rows in sections])
-        if rec:
-            body = f"\U0001F916 PICK\n──────────\n{rec}\n\n" + body
+        pick = top_pick([(label, rows) for label, _emoji, rows in sections])
+        if pick:
+            body = f"\U0001F916 PICK\n──────────\n{pick}\n\n" + body
         notify(title, body)
         print(f"NOTIFIED {total_new} new unit(s).")
     else:
