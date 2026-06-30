@@ -229,6 +229,8 @@ def notify(title, body, priority=4, tags=("house",)):
     if DRY_RUN:
         print(f"[DRY_RUN p{priority}] would push:\nTITLE: {title}\n{body}")
         return
+    if len(body) > 3900:  # ntfy.sh rejects oversized messages (~4 KB limit)
+        body = body[:3860] + "\n… (truncated — open the app for the rest)"
     # Publish via JSON so unicode/emoji in the title survive: HTTP headers are
     # latin-1 only, so an emoji in a Title header raises UnicodeEncodeError.
     payload = json.dumps(
@@ -246,7 +248,11 @@ def notify(title, body, priority=4, tags=("house",)):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    urllib.request.urlopen(req, timeout=30).read()
+    try:
+        urllib.request.urlopen(req, timeout=30).read()
+    except Exception as e:
+        # Never fail the whole run on a push hiccup — state still advances.
+        print(f"WARN: ntfy push failed: {e}")
 
 
 def main():
@@ -306,18 +312,29 @@ def main():
     if total_new:
         summary = ", ".join(f"{label} {len(rows)}" for label, _, rows in sections_new)
         title = f"\U0001F3E0 {total_new} new 1BR — {summary}"
-        blocks = []
-        for label, emoji, rows in sections_new:
-            header = f"{emoji} {label.upper()} · {len(rows)} new\n──────────"
-            blocks.append(header + "\n" + "\n\n".join(unit_block(r) for r in rows))
+        # Flatten + globally rank, then show only the top few so the push stays
+        # under ntfy's size limit when a big batch lands at once.
+        flat = [(label, r) for label, _emoji, rows in sections_new for r in rows]
+        flat.sort(
+            key=lambda lr: (
+                not lr[1].get("reservable"),
+                lr[0] != "One Lakefront",
+                lr[1]["ppsf"],
+                -lr[1]["sqft"],
+            )
+        )
+        SHOW = 8
+        blocks = [f"{label}:\n{unit_block(r)}" for label, r in flat[:SHOW]]
         body = "\n\n".join(blocks)
+        if len(flat) > SHOW:
+            body += f"\n\n➕ {len(flat) - SHOW} more match — open the app for the rest."
         pick = top_pick([(label, rows) for label, _emoji, rows in sections_new])
         if pick:
             body = f"\U0001F916 PICK\n──────────\n{pick}\n\n" + body
         if gone_line:
             body += "\n\n" + gone_line
         notify(title, body, priority=4, tags=["house"])
-        print(f"NOTIFIED {total_new} new unit(s).")
+        print(f"NOTIFIED {total_new} new (showing {min(SHOW, len(flat))}).")
     elif gone:
         n = sum(len(ids) for _, ids in gone)
         title = f"📉 {n} unit(s) left the market"
