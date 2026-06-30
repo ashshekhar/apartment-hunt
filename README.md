@@ -1,8 +1,9 @@
 # apartment-hunt
 
-Automated check of three Seattle buildings for new 1 bed / 1 bath units, with a
-phone alert via [ntfy](https://ntfy.sh) when one matches. Properties, in priority
-order: **One Lakefront**, **JUXT**, **True North** (all on SightMap feeds).
+Automated check of **One Lakefront** (Seattle) for new 1 bed / 1 bath units, with a
+phone alert via [ntfy](https://ntfy.sh) when one matches. (JUXT and True North were
+removed by request; their feed entries are kept commented in `hunt.py` for easy
+re-adding.)
 
 ## Files
 

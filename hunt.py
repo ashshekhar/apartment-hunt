@@ -23,8 +23,9 @@ NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "onelakefront-hunt-7tq39fkd2p")
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
 
-# Properties in priority order (One Lakefront first). Each SightMap feed shares
-# the same shape: .data.units[] and .data.floor_plans[].
+# Buildings to watch. Each SightMap feed shares the same shape: .data.units[]
+# and .data.floor_plans[]. (JUXT and True North removed by request — keep their
+# blocks handy below if you want to re-add them later.)
 PROPERTIES = [
     {
         "key": "one-lakefront",
@@ -32,18 +33,10 @@ PROPERTIES = [
         "emoji": "\U0001F31F",  # star
         "url": "https://sightmap.com/app/api/v1/zlpo6k14pg4/sightmaps/107943",
     },
-    {
-        "key": "juxt",
-        "label": "JUXT",
-        "emoji": "\U0001F3D9",  # cityscape
-        "url": "https://sightmap.com/app/api/v1/n9w6170mv71/sightmaps/107536",
-    },
-    {
-        "key": "true-north",
-        "label": "True North",
-        "emoji": "\U0001F9ED",  # compass
-        "url": "https://sightmap.com/app/api/v1/zlpo5x08vg4/sightmaps/28201",
-    },
+    # {"key": "juxt", "label": "JUXT", "emoji": "\U0001F3D9",
+    #  "url": "https://sightmap.com/app/api/v1/n9w6170mv71/sightmaps/107536"},
+    # {"key": "true-north", "label": "True North", "emoji": "\U0001F9ED",
+    #  "url": "https://sightmap.com/app/api/v1/zlpo5x08vg4/sightmaps/28201"},
 ]
 
 BENCH = 2043          # current effective rent (W119); eff6 below this = a better deal
