@@ -17,7 +17,7 @@ order: **One Lakefront**, **JUXT**, **True North** (all on SightMap feeds).
 ## Match criteria
 
 A unit alerts only if all are true: 1 bed / 1 bath, area greater than 506 sqft,
-floor 2 or higher, available on or after 2026-07-15, and not in that building's
+floor 1 or higher, available on or after 2026-07-15, and not in that building's
 skip list. The benchmark effective rent is $2,043/mo (current unit, One Lakefront
 W119); a match whose 6-weeks-free effective rent is below that is flagged
 "beats $2,043".

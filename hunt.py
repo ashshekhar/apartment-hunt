@@ -139,7 +139,7 @@ def qualifying_rows(data, disliked):
             continue
         if (u.get("area") or 0) <= MIN_SQFT:
             continue
-        if floor_of(u.get("unit_number")) < 2:
+        if floor_of(u.get("unit_number")) < 1:  # floor 1 and up
             continue
         if (u.get("available_on") or "") < MIN_DATE:
             continue
