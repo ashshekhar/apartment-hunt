@@ -48,7 +48,13 @@ PROPERTIES = [
 
 BENCH = 2043          # current effective rent (W119); eff6 below this = a better deal
 MIN_SQFT = 506        # must beat the current 506 sqft unit
-MIN_DATE = "2026-07-15"
+# Move-in window: current lease ends Aug 23, so move in Aug 15-22 (<=1 week of double
+# rent). A unit is usable only if it's available on or before the move-in date.
+MOVE_BY = "2026-08-22"          # exclude units not available by the latest move-in
+RESERVABLE_FROM = "2026-07-15"  # available on/after this can be held now for an Aug
+#                                 start (leasing holds a unit up to ~1 month from its
+#                                 available date); units available earlier only work
+#                                 if they're still vacant come August.
 
 
 def fetch_json(url):
@@ -141,7 +147,8 @@ def qualifying_rows(data, disliked):
             continue
         if floor_of(u.get("unit_number")) < 1:  # floor 1 and up
             continue
-        if (u.get("available_on") or "") < MIN_DATE:
+        avail = u.get("available_on") or ""
+        if not avail or avail > MOVE_BY:
             continue
         unit = str(u.get("unit_number"))
         if unit in disliked:
@@ -157,7 +164,8 @@ def qualifying_rows(data, disliked):
                 "plan": plan_name(fp),
                 "floor": floor_of(unit),
                 "sqft": area,
-                "avail": u.get("available_on"),
+                "avail": avail,
+                "reservable": avail >= RESERVABLE_FROM,
                 "base": base,
                 "term": term,
                 "true12": true12,
@@ -181,6 +189,9 @@ def unit_block(r):
             f"\U0001F381 6 wks free → {money(r['eff6'])}/mo",
             f"\U0001F381 8 wks free → {money(r['eff8'])}/mo",
             f"\U0001F4CA ${r['ppsf']:.2f}/sqft{beats}",
+            "\U0001F511 can reserve now"
+            if r.get("reservable")
+            else "⏳ only if still vacant in Aug",
         ]
     )
 
@@ -195,7 +206,14 @@ def top_pick(sections):
     cands = [(label, r) for label, rows in sections for r in rows]
     if not cands:
         return None
-    cands.sort(key=lambda lr: (lr[0] != "One Lakefront", lr[1]["ppsf"], -lr[1]["sqft"]))
+    cands.sort(
+        key=lambda lr: (
+            not lr[1].get("reservable"),  # reservable units first
+            lr[0] != "One Lakefront",     # then One Lakefront preference
+            lr[1]["ppsf"],                # then best $/sqft
+            -lr[1]["sqft"],               # then largest
+        )
+    )
 
     def line(lead, label, r):
         beats = " · beats your $2,043" if r["eff6"] < BENCH else ""
@@ -207,9 +225,9 @@ def top_pick(sections):
     return "\n".join(out)
 
 
-def notify(title, body):
+def notify(title, body, priority=4, tags=("house",)):
     if DRY_RUN:
-        print(f"[DRY_RUN] would push:\nTITLE: {title}\n{body}")
+        print(f"[DRY_RUN p{priority}] would push:\nTITLE: {title}\n{body}")
         return
     # Publish via JSON so unicode/emoji in the title survive: HTTP headers are
     # latin-1 only, so an emoji in a Title header raises UnicodeEncodeError.
@@ -218,8 +236,8 @@ def notify(title, body):
             "topic": NTFY_TOPIC,
             "title": title,
             "message": body,
-            "priority": 4,
-            "tags": ["house"],
+            "priority": priority,
+            "tags": list(tags),
         }
     ).encode("utf-8")
     req = urllib.request.Request(
@@ -237,8 +255,10 @@ def main():
     props_state = state.setdefault("properties", {})
     disliked_map = state.get("disliked", {})
 
-    sections = []   # (label, emoji, sorted new rows) in priority order
-    total_new = 0
+    sections_new = []   # (label, emoji, new rows) for the alert body
+    all_current = []    # (label, rows) for the "best right now" pick
+    gone = []           # (label, [unit ids that dropped off the list])
+    total_new = total_current = 0
 
     for prop in PROPERTIES:
         key = prop["key"]
@@ -247,6 +267,7 @@ def main():
         try:
             data = fetch_json(prop["url"])["data"]
         except Exception as e:
+            # Keep this property's prior state so a fetch blip isn't read as "all gone".
             print(f"WARN: {prop['label']} fetch failed: {e}")
             continue
 
@@ -254,29 +275,69 @@ def main():
         current_ids = [r["unit"] for r in rows]
         new_rows = sorted(
             (r for r in rows if r["unit"] not in seen),
-            key=lambda r: (r["eff8"], -r["sqft"]),
+            key=lambda r: (not r.get("reservable"), r["ppsf"], -r["sqft"]),
         )
-        if new_rows:
-            sections.append((prop["label"], prop["emoji"], new_rows))
-            total_new += len(new_rows)
-        props_state[key] = {"seen": current_ids}
-        print(f"{prop['label']}: qualifying={current_ids or 'none'}, new={[r['unit'] for r in new_rows]}")
+        gone_ids = [u for u in seen if u not in current_ids]
 
+        total_current += len(rows)
+        if rows:
+            all_current.append((prop["label"], rows))
+        if new_rows:
+            sections_new.append((prop["label"], prop["emoji"], new_rows))
+            total_new += len(new_rows)
+        if gone_ids:
+            gone.append((prop["label"], gone_ids))
+        props_state[key] = {"seen": current_ids}
+        print(
+            f"{prop['label']}: qualifying={current_ids or 'none'}, "
+            f"new={[r['unit'] for r in new_rows]}, gone={gone_ids}"
+        )
+
+    now_pt = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=7)
+    stamp = now_pt.strftime("%-I:%M %p PT, %b %-d")
+    gone_line = ""
+    if gone:
+        gone_line = "📉 Left the list: " + "; ".join(
+            f"{label} {', '.join(ids)}" for label, ids in gone
+        )
+
+    # Always send something so it visibly stays alive: a real alert for new units, a
+    # notice when a tracked unit drops off, or a low-priority heartbeat otherwise.
     if total_new:
-        summary = ", ".join(f"{label} {len(rows)}" for label, _, rows in sections)
+        summary = ", ".join(f"{label} {len(rows)}" for label, _, rows in sections_new)
         title = f"\U0001F3E0 {total_new} new 1BR — {summary}"
         blocks = []
-        for label, emoji, rows in sections:
+        for label, emoji, rows in sections_new:
             header = f"{emoji} {label.upper()} · {len(rows)} new\n──────────"
             blocks.append(header + "\n" + "\n\n".join(unit_block(r) for r in rows))
         body = "\n\n".join(blocks)
-        pick = top_pick([(label, rows) for label, _emoji, rows in sections])
+        pick = top_pick([(label, rows) for label, _emoji, rows in sections_new])
         if pick:
             body = f"\U0001F916 PICK\n──────────\n{pick}\n\n" + body
-        notify(title, body)
+        if gone_line:
+            body += "\n\n" + gone_line
+        notify(title, body, priority=4, tags=["house"])
         print(f"NOTIFIED {total_new} new unit(s).")
+    elif gone:
+        n = sum(len(ids) for _, ids in gone)
+        title = f"📉 {n} unit(s) left the market"
+        body = f"{gone_line}\n\n{total_current} still match. Nothing new.\n{stamp}"
+        best = top_pick(all_current)
+        if best:
+            body += f"\n\nBest still available:\n{best}"
+        notify(title, body, priority=3, tags=["chart_with_downwards_trend"])
+        print(f"NOTIFIED gone: {gone}")
     else:
-        print("No new matches across any property.")
+        title = f"✅ Still hunting — {total_current} match"
+        body = (
+            f"Checked {stamp}. {total_current} units currently match, "
+            "nothing new since last check."
+        )
+        best = top_pick(all_current)
+        if best:
+            body += f"\n\nBest right now:\n{best}"
+        notify(title, body, priority=2, tags=["eyes"])
+        print(f"HEARTBEAT: {total_current} matching, nothing new.")
 
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)

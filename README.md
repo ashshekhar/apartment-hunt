@@ -17,10 +17,19 @@ order: **One Lakefront**, **JUXT**, **True North** (all on SightMap feeds).
 ## Match criteria
 
 A unit alerts only if all are true: 1 bed / 1 bath, area greater than 506 sqft,
-floor 1 or higher, available on or after 2026-07-15, and not in that building's
-skip list. The benchmark effective rent is $2,043/mo (current unit, One Lakefront
-W119); a match whose 6-weeks-free effective rent is below that is flagged
-"beats $2,043".
+floor 1 or higher, available on or before the move-in date (`MOVE_BY`, currently
+2026-08-22), and not in that building's skip list. The benchmark effective rent is
+$2,043/mo (current unit, One Lakefront W119); a match whose 6-weeks-free effective
+rent is below that is flagged "beats $2,043".
+
+### Move-in window and reservability
+
+The current lease ends Aug 23, so the move-in target is Aug 15-22 (at most ~1 week
+of double rent). Leasing holds a unit up to ~1 month from its available date, so each
+match is tagged: **can reserve now** if it's available on/after `RESERVABLE_FROM`
+(2026-07-15) — lockable today for an August start — or **only if still vacant in Aug**
+if it became available earlier (you can only take it if nobody else does). The top
+pick favors reservable units.
 
 ## Pricing
 
@@ -38,6 +47,10 @@ size, with a runner-up.
 
 Pushes to ntfy topic `onelakefront-hunt-7tq39fkd2p`. Subscribe to that topic in
 the ntfy app to receive them. Override with the `NTFY_TOPIC` environment variable.
+
+Every run sends something so it's visibly alive: a high-priority alert when new units
+appear, a medium-priority notice when a tracked unit drops off the list, or a
+low-priority heartbeat ("Still hunting — N match, nothing new") otherwise.
 
 ## Skip list
 
