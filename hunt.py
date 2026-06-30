@@ -41,13 +41,12 @@ PROPERTIES = [
 
 BENCH = 2043          # current effective rent (W119); eff6 below this = a better deal
 MIN_SQFT = 506        # must beat the current 506 sqft unit
-# Move-in window: current lease ends Aug 23, so move in Aug 15-22 (<=1 week of double
-# rent). A unit is usable only if it's available on or before the move-in date.
-MOVE_BY = "2026-08-22"          # exclude units not available by the latest move-in
-RESERVABLE_FROM = "2026-07-15"  # available on/after this can be held now for an Aug
-#                                 start (leasing holds a unit up to ~1 month from its
-#                                 available date); units available earlier only work
-#                                 if they're still vacant come August.
+# Move-in is Aug 23 (current lease ends then) -> a lease starting Aug 23 = $0 overlap.
+# SightMap caps the selectable move-in date at the available date + HOLD_DAYS, so a
+# unit can only reach an Aug 23 move-in if it becomes available on/after ~Jul 24.
+# Otherwise the latest move-in is earlier and you pay overlap (double rent) to Aug 23.
+MOVE_IN = "2026-08-23"
+HOLD_DAYS = 30
 
 
 def fetch_json(url):
@@ -127,6 +126,26 @@ def price_for(unit):
     return base, term, False
 
 
+def overlap_cost(avail, eff_monthly):
+    """Overlap rent (and days) if you lock the unit in for its latest move-in.
+
+    Move-in is capped at the available date + HOLD_DAYS. If that latest move-in is
+    on/after Aug 23 you can start the lease Aug 23 for $0 overlap; if earlier, you
+    pay rent on the new place for the days between it and Aug 23 (double rent, since
+    the old lease runs to Aug 23). Returns (dollars, days); rate = 8-wks-free eff.
+    """
+    try:
+        a = datetime.date.fromisoformat(avail)
+        move = datetime.date.fromisoformat(MOVE_IN)
+    except (ValueError, TypeError):
+        return 0, 0
+    latest = a + datetime.timedelta(days=HOLD_DAYS)
+    if latest >= move:
+        return 0, 0
+    days = (move - latest).days
+    return round(eff_monthly * days / 30), days
+
+
 def qualifying_rows(data, disliked):
     floor_plans = {str(fp["id"]): fp for fp in data.get("floor_plans", [])}
     rows = []
@@ -141,7 +160,7 @@ def qualifying_rows(data, disliked):
         if floor_of(u.get("unit_number")) < 1:  # floor 1 and up
             continue
         avail = u.get("available_on") or ""
-        if not avail or avail > MOVE_BY:
+        if not avail or avail > MOVE_IN:
             continue
         unit = str(u.get("unit_number"))
         if unit in disliked:
@@ -151,6 +170,9 @@ def qualifying_rows(data, disliked):
         area = u.get("area") or 0
         eff6 = round_half_up(base * (52 - 6) / 52)
         eff8 = round_half_up(base * (52 - 8) / 52)
+        ov_cost, ov_days = overlap_cost(avail, eff8)
+        # rank = effective $/sqft with the overlap penalty spread over 12 months
+        rank = (eff8 + ov_cost / 12) / area if area else 9e9
         rows.append(
             {
                 "unit": unit,
@@ -158,7 +180,10 @@ def qualifying_rows(data, disliked):
                 "floor": floor_of(unit),
                 "sqft": area,
                 "avail": avail,
-                "reservable": avail >= RESERVABLE_FROM,
+                "reservable": ov_days == 0,
+                "overlap_cost": ov_cost,
+                "overlap_days": ov_days,
+                "rank": rank,
                 "base": base,
                 "term": term,
                 "true12": true12,
@@ -182,9 +207,11 @@ def unit_block(r):
             f"\U0001F381 6 wks free → {money(r['eff6'])}/mo",
             f"\U0001F381 8 wks free → {money(r['eff8'])}/mo",
             f"\U0001F4CA ${r['ppsf']:.2f}/sqft{beats}",
-            "\U0001F511 can reserve now"
-            if r.get("reservable")
-            else "⏳ only if still vacant in Aug",
+            (
+                "\U0001F511 reserve now → move in Aug 23, $0 overlap"
+                if r.get("reservable")
+                else f"⏳ +${r['overlap_cost']} overlap ({r['overlap_days']}d) if locked in now"
+            ),
         ]
     )
 
@@ -199,14 +226,7 @@ def top_pick(sections):
     cands = [(label, r) for label, rows in sections for r in rows]
     if not cands:
         return None
-    cands.sort(
-        key=lambda lr: (
-            not lr[1].get("reservable"),  # reservable units first
-            lr[0] != "One Lakefront",     # then One Lakefront preference
-            lr[1]["ppsf"],                # then best $/sqft
-            -lr[1]["sqft"],               # then largest
-        )
-    )
+    cands.sort(key=lambda lr: lr[1]["rank"])  # most optimal (lowest all-in $/sqft) first
 
     def line(lead, label, r):
         beats = " · beats your $2,043" if r["eff6"] < BENCH else ""
@@ -274,7 +294,7 @@ def main():
         current_ids = [r["unit"] for r in rows]
         new_rows = sorted(
             (r for r in rows if r["unit"] not in seen),
-            key=lambda r: (not r.get("reservable"), r["ppsf"], -r["sqft"]),
+            key=lambda r: r["rank"],
         )
         gone_ids = [u for u in seen if u not in current_ids]
 
@@ -308,22 +328,21 @@ def main():
         # Flatten + globally rank, then show only the top few so the push stays
         # under ntfy's size limit when a big batch lands at once.
         flat = [(label, r) for label, _emoji, rows in sections_new for r in rows]
-        flat.sort(
-            key=lambda lr: (
-                not lr[1].get("reservable"),
-                lr[0] != "One Lakefront",
-                lr[1]["ppsf"],
-                -lr[1]["sqft"],
-            )
-        )
+        flat.sort(key=lambda lr: lr[1]["rank"])  # most optimal first
         SHOW = 8
-        blocks = [f"{label}:\n{unit_block(r)}" for label, r in flat[:SHOW]]
+        blocks = [f"#{i} {label}:\n{unit_block(r)}" for i, (label, r) in enumerate(flat[:SHOW], 1)]
         body = "\n\n".join(blocks)
         if len(flat) > SHOW:
             body += f"\n\n➕ {len(flat) - SHOW} more match — open the app for the rest."
+        if not any(r.get("reservable") for _, r in flat):
+            body = (
+                "💡 None reach an Aug 23 move-in yet — each needs the overlap shown. "
+                "Best to wait for a unit that lists with availability Jul 24+.\n\n"
+            ) + body
         pick = top_pick([(label, rows) for label, _emoji, rows in sections_new])
         if pick:
-            body = f"\U0001F916 PICK\n──────────\n{pick}\n\n" + body
+            body = f"\U0001F916 BEST OPTION\n──────────\n{pick}\n\n" + body
+        body += "\n\n(Prices are the early/floor rate; a later move-in costs more — revenue-managed, not shown.)"
         if gone_line:
             body += "\n\n" + gone_line
         notify(title, body, priority=4, tags=["house"])
