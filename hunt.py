@@ -39,7 +39,8 @@ PROPERTIES = [
     #  "url": "https://sightmap.com/app/api/v1/zlpo5x08vg4/sightmaps/28201"},
 ]
 
-BENCH = 2043          # current effective rent (W119); eff6 below this = a better deal
+BENCH = 2043          # current effective rent (W119); eff4 below this = a better deal
+FREE_WEEKS = 4        # current concession (was 6/8 in earlier promos)
 MIN_SQFT = 506        # must beat the current 506 sqft unit
 # Move-in is Aug 23 (current lease ends then) -> a lease starting Aug 23 = $0 overlap.
 # SightMap caps the selectable move-in date at the available date + HOLD_DAYS, so a
@@ -132,7 +133,7 @@ def overlap_cost(avail, eff_monthly):
     Move-in is capped at the available date + HOLD_DAYS. If that latest move-in is
     on/after Aug 23 you can start the lease Aug 23 for $0 overlap; if earlier, you
     pay rent on the new place for the days between it and Aug 23 (double rent, since
-    the old lease runs to Aug 23). Returns (dollars, days); rate = 8-wks-free eff.
+    the old lease runs to Aug 23). Returns (dollars, days); rate = FREE_WEEKS-free eff.
     """
     try:
         a = datetime.date.fromisoformat(avail)
@@ -168,11 +169,10 @@ def qualifying_rows(data, disliked):
 
         base, term, true12 = price_for(u)
         area = u.get("area") or 0
-        eff6 = round_half_up(base * (52 - 6) / 52)
-        eff8 = round_half_up(base * (52 - 8) / 52)
-        ov_cost, ov_days = overlap_cost(avail, eff8)
+        eff4 = round_half_up(base * (52 - FREE_WEEKS) / 52)
+        ov_cost, ov_days = overlap_cost(avail, eff4)
         # rank = effective $/sqft with the overlap penalty spread over 12 months
-        rank = (eff8 + ov_cost / 12) / area if area else 9e9
+        rank = (eff4 + ov_cost / 12) / area if area else 9e9
         rows.append(
             {
                 "unit": unit,
@@ -187,9 +187,8 @@ def qualifying_rows(data, disliked):
                 "base": base,
                 "term": term,
                 "true12": true12,
-                "eff6": eff6,
-                "eff8": eff8,
-                "ppsf": round(eff8 / area, 2) if area else 0,
+                "eff4": eff4,
+                "ppsf": round(eff4 / area, 2) if area else 0,
             }
         )
     return rows
@@ -198,14 +197,13 @@ def qualifying_rows(data, disliked):
 def unit_block(r):
     term_label = "12-mo" if r["true12"] else (f"{r['term']}-mo" if r["term"] else "term n/a")
     tilde = "" if r["true12"] else "~"
-    beats = f" · ✅ beats {money(BENCH)}" if r["eff6"] < BENCH else ""
+    beats = f" · ✅ beats {money(BENCH)}" if r["eff4"] < BENCH else ""
     return "\n".join(
         [
             f"\U0001F3E0 {r['unit']} — {r['plan']}",
             f"\U0001F3E2 Floor {r['floor']} · \U0001F4D0 {r['sqft']} sqft · \U0001F4C5 {short_date(r['avail'])}",
             f"\U0001F4B5 {tilde}{money(r['base'])}/mo ({term_label})",
-            f"\U0001F381 6 wks free → {money(r['eff6'])}/mo",
-            f"\U0001F381 8 wks free → {money(r['eff8'])}/mo",
+            f"\U0001F381 {FREE_WEEKS} wks free → {money(r['eff4'])}/mo",
             f"\U0001F4CA ${r['ppsf']:.2f}/sqft{beats}",
             (
                 "\U0001F511 reserve now → move in Aug 23, $0 overlap"
@@ -229,7 +227,7 @@ def top_pick(sections):
     cands.sort(key=lambda lr: lr[1]["rank"])  # most optimal (lowest all-in $/sqft) first
 
     def line(lead, label, r):
-        beats = " · beats your $2,043" if r["eff6"] < BENCH else ""
+        beats = " · beats your $2,043" if r["eff4"] < BENCH else ""
         return f"{lead}: {label} {r['unit']} — {r['sqft']} sqft at ${r['ppsf']:.2f}/sqft{beats}"
 
     out = [line("Top pick", *cands[0])]

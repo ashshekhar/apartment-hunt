@@ -20,7 +20,7 @@ re-adding.)
 A unit alerts only if all are true: 1 bed / 1 bath, area greater than 506 sqft,
 floor 1 or higher, available on or before the move-in date (`MOVE_IN`, currently
 2026-08-23), and not in that building's skip list. The benchmark effective rent is
-$2,043/mo (current unit, One Lakefront W119); a match whose 6-weeks-free effective
+$2,043/mo (current unit, One Lakefront W119); a match whose 4-weeks-free effective
 rent is below that is flagged "beats $2,043".
 
 ### Move-in timing and overlap cost
@@ -29,7 +29,7 @@ Move-in is Aug 23 (current lease ends then), so a lease starting Aug 23 means $0
 overlap. SightMap caps the selectable move-in at the available date + `HOLD_DAYS`
 (30), so a unit only reaches an Aug 23 move-in if it's available on/after ~Jul 24
 (tagged **reserve now → $0 overlap**). Otherwise its latest move-in is earlier and
-you pay double rent until Aug 23; each such unit shows its **overlap cost** (8-wks-
+you pay double rent until Aug 23; each such unit shows its **overlap cost** (4-wks-
 free effective rate × the gap days). Matches are ordered most-optimal first by an
 all-in `rank` (effective $/sqft with the overlap penalty spread over 12 months).
 
